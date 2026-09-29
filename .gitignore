@@ -1,0 +1,11 @@
+.env
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+backend/__pycache__/
+backend/.venv/
+backend/vendor/
+backend/*.db
+backend/uploads/
+work/
+outputs/*.zip
