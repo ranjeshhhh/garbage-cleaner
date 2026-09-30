@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from pathlib import Path
+from io import BytesIO
 import os, hashlib, hmac, secrets, math
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
@@ -13,6 +14,8 @@ from jose import jwt, JWTError
 
 ROOT=Path(__file__).parent
 DATABASE_URL=os.getenv('DATABASE_URL','sqlite:///./kabadiwala.db')
+if DATABASE_URL.startswith('postgres://'): DATABASE_URL=DATABASE_URL.replace('postgres://','postgresql+psycopg://',1)
+elif DATABASE_URL.startswith('postgresql://'): DATABASE_URL=DATABASE_URL.replace('postgresql://','postgresql+psycopg://',1)
 engine=create_engine(DATABASE_URL,connect_args={'check_same_thread':False} if DATABASE_URL.startswith('sqlite') else {})
 SessionLocal=sessionmaker(bind=engine,autoflush=False)
 class Base(DeclarativeBase): pass
@@ -39,6 +42,12 @@ def verify(p,h):
  try: salt,digest=h.split(':'); return hmac.compare_digest(hashlib.scrypt(p.encode(),salt=bytes.fromhex(salt),n=2**14,r=8,p=1).hex(),digest)
  except: return False
 SECRET=os.getenv('JWT_SECRET','local-development-secret-change-this')
+if os.getenv('ENVIRONMENT')=='production' and (not os.getenv('JWT_SECRET') or SECRET=='local-development-secret-change-this'):
+ raise RuntimeError('Set a unique JWT_SECRET for production.')
+if os.getenv('ENVIRONMENT')=='production' and not os.getenv('CLOUDINARY_URL'):
+ raise RuntimeError('Set CLOUDINARY_URL to durable image storage for production.')
+if os.getenv('ENVIRONMENT')=='production' and (not os.getenv('ADMIN_EMAIL') or len(os.getenv('ADMIN_PASSWORD',''))<12):
+ raise RuntimeError('Set ADMIN_EMAIL and an ADMIN_PASSWORD of at least 12 characters for production.')
 security=HTTPBearer(auto_error=False)
 def current_user(creds:HTTPAuthorizationCredentials=Depends(security),db:Session=Depends(get_db)):
  if not creds: raise HTTPException(401,'Please sign in to continue.')
@@ -63,7 +72,7 @@ def pickup_json(p,db,viewer=None):
 app=FastAPI(title='Kabadiwala Connect API',version='1.0.0')
 origins=os.getenv('CORS_ORIGINS','http://localhost:5173').split(',')
 app.add_middleware(CORSMiddleware,allow_origins=origins,allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
-UPLOAD_DIR=ROOT/'uploads'; UPLOAD_DIR.mkdir(exist_ok=True); app.mount('/uploads',StaticFiles(directory=UPLOAD_DIR),name='uploads')
+UPLOAD_DIR=Path(os.getenv('UPLOAD_DIR',str(ROOT/'uploads'))); UPLOAD_DIR.mkdir(parents=True,exist_ok=True); app.mount('/uploads',StaticFiles(directory=UPLOAD_DIR),name='uploads')
 @app.on_event('startup')
 def seed():
  with SessionLocal() as db:
@@ -72,6 +81,8 @@ def seed():
   admin_email=os.getenv('ADMIN_EMAIL','admin@kabadiwalaconnect.in')
   if not db.query(User).filter_by(email=admin_email).first(): db.add(User(name='Platform Admin',email=admin_email,role='admin',password_hash=pw_hash(os.getenv('ADMIN_PASSWORD','ChangeMe123!')),verified=True))
   db.commit()
+@app.get('/api/health')
+def health(): return {'status':'ok'}
 class Register(BaseModel): name:str; email:EmailStr; password:str; role:str; phone:str=''; city:str=''
 class Login(BaseModel): email:EmailStr; password:str
 class PickupIn(BaseModel): category:str; subcategory:str=''; quantity:float; unit:str='kg'; condition:str='Clean'; address:str; city:str=''; lat:Optional[float]=None; lon:Optional[float]=None; date:str=''; time:str=''; notes:str=''; images:list[str]=[]
@@ -192,6 +203,12 @@ def upload(files:list[UploadFile]=File(...),u:User=Depends(current_user)):
   if f.content_type not in ['image/jpeg','image/png','image/webp']: raise HTTPException(400,'Use JPG, PNG or WebP images.')
   data=f.file.read(5*1024*1024+1)
   if len(data)>5*1024*1024: raise HTTPException(400,'Each image must be smaller than 5 MB.')
+  if os.getenv('CLOUDINARY_URL'):
+   try:
+    import cloudinary.uploader
+    result=cloudinary.uploader.upload(BytesIO(data),folder='kabadiwala-connect',resource_type='image')
+    out.append(result['secure_url']);continue
+   except Exception as exc: raise HTTPException(502,'Image storage is temporarily unavailable.') from exc
   name=secrets.token_hex(12)+'.'+f.filename.rsplit('.',1)[-1].lower();(UPLOAD_DIR/name).write_bytes(data);out.append('/uploads/'+name)
  return {'images':out}
 @app.post('/api/complaints')

@@ -2,6 +2,8 @@
 
 Base URL: `http://localhost:8000/api`. JSON endpoints accept and return JSON; authenticated endpoints require `Authorization: Bearer <JWT>`. Interactive OpenAPI documentation is served at `/docs`.
 
+`GET /api/health` is a public health check intended for hosting providers.
+
 | Method | Path | Access | Purpose |
 |---|---|---|---|
 | POST | `/auth/register` | Public | Create customer, collector, or recycler account |

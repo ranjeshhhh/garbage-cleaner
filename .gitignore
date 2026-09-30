@@ -1,6 +1,7 @@
 .env
 frontend/node_modules/
 frontend/dist/
+frontend/.vercel/
 frontend/*.tsbuildinfo
 backend/__pycache__/
 backend/.venv/

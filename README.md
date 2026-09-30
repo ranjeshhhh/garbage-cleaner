@@ -53,11 +53,25 @@ Demo identities: `customer.demo@example.com`, `collector.demo@example.com`, `rec
 
 In-app notifications are persisted. Payment is recorded as a material valuation; no cash/UPI payment processor or SMS/email delivery is integrated.
 
+## Deploy: Vercel frontend + Render API + PostgreSQL
+
+Deployment config is included in `render.yaml` and `frontend/vercel.json`.
+
+1. Push this repository to GitHub. Keep the repository root as the Render Blueprint root; Render reads `render.yaml` and deploys the API from `backend/`.
+2. In Render, create a **Blueprint** from the GitHub repository and apply `render.yaml`. Set the prompted values: `ADMIN_EMAIL`, a strong `ADMIN_PASSWORD`, and `CLOUDINARY_URL` from your Cloudinary console. The blueprint generates `JWT_SECRET` and connects the API to PostgreSQL.
+3. Wait for the API deploy to become live. Its base URL is `https://kabadiwala-connect-api.onrender.com`; verify `/api/health` returns `{"status":"ok"}`.
+4. In Vercel, import the same GitHub repo and set **Root Directory** to `frontend`. Add environment variable `VITE_API_BASE_URL` with the API base URL (no trailing slash), then deploy.
+5. Copy the Vercel production domain, for example `https://kabadiwala-connect.vercel.app`. In Render service environment variables, replace `CORS_ORIGINS` with that exact domain (no trailing slash), then save/redeploy.
+
+The Render blueprint uses a **paid PostgreSQL Basic 256 MB plan** to avoid the 30-day expiry of Render's free Postgres. Render's API web service is on its free plan and may spin down after inactivity. Cloudinary is required in production so uploaded images persist independently of Render's ephemeral filesystem. Review current provider pricing and limits before applying the Render Blueprint. The configured PostgreSQL region is Singapore; keep the API in the same region for its internal database connection.
+
+Local development continues to use SQLite and local uploads. For Vercel, `VITE_API_BASE_URL` is a build-time frontend setting and its name must retain the `VITE_` prefix.
+
 ## Location and image handling
 
 The browser asks for geolocation permission only after a signed-in customer presses **Use My Current Location**. A successful one-time reading is reverse-geocoded through OpenStreetMap Nominatim; the customer can edit and confirm the resulting address. If access is denied, the address remains manually editable. Latitude/longitude are stored with the pickup and used for approximate Haversine distances when collector coordinates exist. No background or continuous location tracking is performed. Browser geolocation requires localhost or HTTPS. Reverse geocoding requires internet access and follows Nominatim availability and usage terms.
 
-Images are optional. The API accepts up to five JPEG, PNG or WebP images (each at most 5 MB) and stores them under `backend/uploads` for local development. The development server currently serves those uploads through a static route, so anyone with a file URL can access it. Production should use private object storage, signed URLs, malware scanning, retention rules, HTTPS, and a configured CORS allowlist.
+Images are optional. The API accepts up to five JPEG, PNG or WebP images (each at most 5 MB) and stores them under `backend/uploads` for local development. The development server currently serves those uploads through a static route, so anyone with a file URL can access it. In production, set `CLOUDINARY_URL`; the API uploads images to Cloudinary and returns secure image URLs. For sensitive deployments, configure provider access controls, retention rules, HTTPS, and a strict CORS allowlist.
 
 ## API outline
 

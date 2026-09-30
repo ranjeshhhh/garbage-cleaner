@@ -4,3 +4,5 @@ sqlalchemy
 pydantic[email]
 python-jose[cryptography]
 python-multipart
+psycopg[binary]
+cloudinary
